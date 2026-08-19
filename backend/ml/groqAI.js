@@ -178,10 +178,91 @@ Question: ${question}`;
   return await chat(system, user, 400);
 }
 
+// ─── 6. Generate AI Health Risk & Associations Report ──────────────────────
+async function generateHealthRiskReport(userData) {
+  const {
+    name,
+    baseline,
+    currentScores,
+    historicalScores,
+    zScores,
+    anomalySeverities,
+    deviationPercentages,
+    trendSlopes,
+    r2,
+    consecutiveDecliningSessions,
+    affectedDomains,
+    sessionCount,
+  } = userData;
+
+  const system = `You are CogTwin, an AI cognitive health assistant. Analyze brain health data to generate a medically cautious interpretation.
+CRITICAL MEDICAL SAFETY & NON-DIAGNOSIS RULES:
+1. NEVER diagnose any disease or medical condition. Never say "You have Alzheimer's", "You have dementia", "You have ADHD", "You have Parkinson's", etc.
+2. Use cautious wording: "May be associated with", "Can sometimes be seen with", "Potential factors include", "This pattern alone does not indicate a diagnosis".
+3. Highlight non-medical factors such as sleep deprivation, stress, mental fatigue, nutrition, and testing environment.
+4. Never recommend prescription medications or stopping medications.
+5. Apply the PERSISTENCE RULE: Only include items in "potentialAssociations" if there is persistent decline or repeated anomalies across multiple sessions. Do NOT create disease/health associations for a single isolated bad score.
+6. Return ONLY valid JSON matching this exact structure:
+{
+  "overallAssessment": "string",
+  "cognitiveMonitoringStatus": "Low Concern" | "Monitor" | "Attention Recommended" | "Professional Evaluation Recommended",
+  "significantPatterns": ["string"],
+  "potentialAssociations": [
+    {
+      "test": "string (e.g. Memory Recall)",
+      "pattern": "string",
+      "severity": "mild" | "moderate" | "severe",
+      "possibleAssociations": ["string"],
+      "symptoms": ["string"],
+      "explanation": "string",
+      "recommendedAction": "string"
+    }
+  ],
+  "recommendations": ["string"],
+  "disclaimer": "string"
+}`;
+
+  const userPrompt = `User: ${name}
+Sessions completed: ${sessionCount}
+Baseline established: ${baseline?.established ? "Yes" : "No"}
+Baseline values: ${JSON.stringify(baseline || {})}
+Current scores: ${JSON.stringify(currentScores || {})}
+Historical overall scores: ${JSON.stringify(historicalScores || [])}
+Z-Scores per test: ${JSON.stringify(zScores || {})}
+Anomaly Severities: ${JSON.stringify(anomalySeverities || {})}
+Deviation percentages from baseline: ${JSON.stringify(deviationPercentages || {})}
+Trend slopes: ${JSON.stringify(trendSlopes || {})} (R²: ${r2 ?? 0})
+Consecutive declining sessions: ${consecutiveDecliningSessions ?? 0}
+Affected domains: ${JSON.stringify(affectedDomains || [])}
+
+Analyze the data and generate the structured JSON health risk interpretation.`;
+
+  const raw = await chat(system, userPrompt, 1000);
+  if (!raw) return null;
+
+  try {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
+
+    // Validate required fields
+    if (!parsed.cognitiveMonitoringStatus || !Array.isArray(parsed.potentialAssociations)) {
+      return null;
+    }
+
+    return parsed;
+  } catch (err) {
+    console.error("Groq health risk report parse error:", err);
+    return null;
+  }
+}
+
 module.exports = {
   generatePersonalizedInsights,
   generateSmartRecommendations,
   explainAnomaly,
   generateWeeklyReport,
   answerHealthQuestion,
+  generateHealthRiskReport,
 };
+

@@ -89,7 +89,11 @@ export const profileApi = {
   update: (data: { name?: string; age?: number }) =>
     request<{ user: ApiUser }>("/profile", { method: "PATCH", body: JSON.stringify(data) }),
   reports: () =>
-    request<{ testResults: FormattedTestResult[]; monthlyTrends: MonthlyTrend[] }>("/profile/reports"),
+    request<{
+      testResults: FormattedTestResult[];
+      monthlyTrends: MonthlyTrend[];
+      healthReport?: HealthReportData;
+    }>("/profile/reports"),
 };
 
 // ─── Notifications ────────────────────────────────────────────────────────────
@@ -146,6 +150,39 @@ export const aiApi = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
+
+export type CognitiveMonitoringStatusType =
+  | "Low Concern"
+  | "Monitor"
+  | "Attention Recommended"
+  | "Professional Evaluation Recommended";
+
+export interface PotentialAssociationItem {
+  test: string;
+  pattern: string;
+  severity: "mild" | "moderate" | "severe";
+  possibleAssociations: string[];
+  symptoms: string[];
+  explanation: string;
+  recommendedAction: string;
+}
+
+export interface HealthReportData {
+  overallAssessment: string;
+  cognitiveMonitoringStatus: CognitiveMonitoringStatusType;
+  significantPatterns?: string[];
+  potentialAssociations: PotentialAssociationItem[];
+  transientNotice?: string | null;
+  recommendations?: string[];
+  disclaimer: string;
+}
+
+export interface CognitiveHealthInsight {
+  title: string;
+  description: string;
+  hasAssociations: boolean;
+  status: CognitiveMonitoringStatusType;
+}
 
 export interface ApiUser {
   id: string;
@@ -241,11 +278,13 @@ export interface DashboardData {
   baselineStatus: BaselineStatus;
   declineInfo: DeclineInfo | null;
   peakInfo: PeakInfo | null;
+  cognitiveHealthInsight?: CognitiveHealthInsight | null;
   weeklyReminderDue: boolean;
   daysSinceLastTest: number | null;
   baseline: ApiUser["baseline"];
   stats: UserStats;
 }
+
 
 export interface AiInsight {
   id: number;

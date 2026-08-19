@@ -3,6 +3,7 @@ const TestResult = require("../models/TestResult");
 const Session    = require("../models/Session");
 const User       = require("../models/User");
 const { protect } = require("../middleware/auth");
+const { analyzeHealthRisks } = require("../ml/healthRiskAnalyzer");
 
 const router = express.Router();
 
@@ -397,6 +398,39 @@ router.get("/", protect, async (req, res) => {
     // Recommendations
     const recommendations = generateRecommendations(cognitiveMetrics, user.baseline, declineInfo, peakInfo);
 
+    // Health Risk Analysis for Dashboard Cognitive Health Insight card
+    const allTestResults = await TestResult.find({ userId }).sort({ createdAt: -1 }).limit(50);
+    const healthRiskAnalysis = analyzeHealthRisks({
+      sessions: allSessions,
+      testResults: allTestResults,
+      baseline: user.baseline,
+    });
+
+    let cognitiveHealthInsight = null;
+    if (healthRiskAnalysis.potentialAssociations.length > 0) {
+      const topPattern = healthRiskAnalysis.potentialAssociations[0];
+      cognitiveHealthInsight = {
+        title: "Cognitive Health Insight",
+        description: `Your recent ${topPattern.test.toLowerCase()} performance shows a persistent pattern compared with your personal baseline over recent sessions.`,
+        hasAssociations: true,
+        status: healthRiskAnalysis.cognitiveMonitoringStatus,
+      };
+    } else if (declineInfo?.detected) {
+      cognitiveHealthInsight = {
+        title: "Cognitive Health Insight",
+        description: `Your cognitive scores show a persistent decline over the last ${declineInfo.weeksOfDecline} sessions.`,
+        hasAssociations: true,
+        status: declineInfo.severity === "severe" ? "Attention Recommended" : "Monitor",
+      };
+    } else if (healthRiskAnalysis.transientNotice) {
+      cognitiveHealthInsight = {
+        title: "Cognitive Health Insight",
+        description: healthRiskAnalysis.transientNotice,
+        hasAssociations: false,
+        status: "Monitor",
+      };
+    }
+
     // Weekly reminder check
     const lastSession = allSessions[0];
     const daysSinceLastTest = lastSession
@@ -426,6 +460,7 @@ router.get("/", protect, async (req, res) => {
       baselineStatus,
       declineInfo,
       peakInfo,
+      cognitiveHealthInsight,
       weeklyReminderDue,
       daysSinceLastTest,
       baseline: user.baseline,
@@ -443,3 +478,4 @@ router.get("/", protect, async (req, res) => {
 });
 
 module.exports = router;
+

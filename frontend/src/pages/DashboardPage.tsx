@@ -213,6 +213,32 @@ const DashboardPage = () => {
         {/* ── Use Case 1: Baseline progress ── */}
         {baselineStatus && <BaselineBanner status={baselineStatus} />}
 
+        {/* ── Cognitive Health Insight Card ── */}
+        {data?.cognitiveHealthInsight && (
+          <motion.div variants={fadeUp} custom={1}
+            className="p-4 rounded-xl border border-primary/30 bg-primary/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          >
+            <div className="flex items-start gap-3">
+              <Brain className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  {data.cognitiveHealthInsight.title}
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 font-semibold">
+                    {data.cognitiveHealthInsight.status}
+                  </span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {data.cognitiveHealthInsight.description}
+                </p>
+              </div>
+            </div>
+            <Link to="/reports" className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1 shrink-0">
+              View potential health associations <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </motion.div>
+        )}
+
+
         {/* ── Use Case 3: Decline alert ── */}
         {declineInfo?.detected && (
           <motion.div variants={fadeUp} custom={1}

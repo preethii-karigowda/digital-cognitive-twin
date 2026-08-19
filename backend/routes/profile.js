@@ -3,6 +3,8 @@ const User = require("../models/User");
 const TestResult = require("../models/TestResult");
 const Session = require("../models/Session");
 const { protect } = require("../middleware/auth");
+const { analyzeHealthRisks } = require("../ml/healthRiskAnalyzer");
+const { generateHealthRiskReport } = require("../ml/groqAI");
 
 const router = express.Router();
 
@@ -27,7 +29,7 @@ router.get("/", protect, async (req, res) => {
         totalTests,
         totalSessions: sessions.length,
         avgScore,
-        streak: user.streak.current,
+        streak: user.streak?.current || 0,
       },
     });
   } catch (err) {
@@ -54,15 +56,16 @@ router.patch("/", protect, async (req, res) => {
   }
 });
 
-// GET /api/profile/reports  — get test history for reports page
+// GET /api/profile/reports  — get test history and AI health report for reports page
 router.get("/reports", protect, async (req, res) => {
   try {
     const userId = req.user._id;
+    const user = await User.findById(userId);
 
     // Recent individual test results
     const testResults = await TestResult.find({ userId })
       .sort({ createdAt: -1 })
-      .limit(20);
+      .limit(50);
 
     const formattedResults = testResults.map((r) => ({
       id: r._id,
@@ -99,7 +102,75 @@ router.get("/reports", protect, async (req, res) => {
       score: parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)),
     }));
 
-    res.json({ testResults: formattedResults, monthlyTrends });
+    // Build Health Risk Interpretation & Potential Associations Report
+    const allSessions = await Session.find({ userId, isComplete: true }).sort({ createdAt: -1 });
+    const fallbackHealthReport = analyzeHealthRisks({
+      sessions: allSessions,
+      testResults,
+      baseline: user.baseline,
+    });
+
+    let healthReport = null;
+
+    // Build context for Groq AI
+    const types = ["memory", "reaction", "pattern", "attention", "decision"];
+    const currentScores = {};
+    const zScores = {};
+    const anomalySeverities = {};
+    const deviationPercentages = {};
+    const affectedDomains = [];
+
+    types.forEach((type) => {
+      const latestResult = testResults.find((r) => r.testType === type);
+      if (latestResult) {
+        currentScores[type] = latestResult.score;
+        zScores[type] = latestResult.anomaly?.zScore ?? null;
+        anomalySeverities[type] = latestResult.anomaly?.severity ?? "none";
+        deviationPercentages[type] = latestResult.deviationFromBaseline ?? null;
+        if (latestResult.score < 75 || (latestResult.anomaly && latestResult.anomaly.detected)) {
+          affectedDomains.push(type);
+        }
+      }
+    });
+
+    const historicalScores = allSessions.map((s) => s.overallScore).filter(Boolean);
+
+    try {
+      healthReport = await generateHealthRiskReport({
+        name: user.name,
+        baseline: user.baseline,
+        currentScores,
+        historicalScores,
+        zScores,
+        anomalySeverities,
+        deviationPercentages,
+        trendSlopes: {},
+        r2: 0,
+        consecutiveDecliningSessions: 0,
+        affectedDomains,
+        sessionCount: allSessions.length,
+      });
+    } catch (e) {
+      console.error("Failed to generate AI health risk report:", e.message);
+    }
+
+    if (!healthReport) {
+      healthReport = fallbackHealthReport;
+    } else {
+      // Ensure fallback disclaimer & transient notice are included if needed
+      if (!healthReport.disclaimer) {
+        healthReport.disclaimer = fallbackHealthReport.disclaimer;
+      }
+      if (fallbackHealthReport.transientNotice && (!healthReport.potentialAssociations || healthReport.potentialAssociations.length === 0)) {
+        healthReport.transientNotice = fallbackHealthReport.transientNotice;
+      }
+    }
+
+    res.json({
+      testResults: formattedResults,
+      monthlyTrends,
+      healthReport,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -113,3 +184,4 @@ function capitalize(str) {
 }
 
 module.exports = router;
+
